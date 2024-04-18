@@ -19,6 +19,7 @@ import (
 	rbaccontroller "github.com/rancher/wrangler/pkg/generated/controllers/rbac/v1"
 	"github.com/rancher/wrangler/pkg/generic"
 	"github.com/rancher/wrangler/pkg/relatedresource"
+	"github.com/sirupsen/logrus"
 	batch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
@@ -215,8 +216,9 @@ func (c *Controller) OnChange(chart *v1.HelmChart, chartStatus v1.HelmChartStatu
 	// update status
 	chartStatus.JobName = job.Name
 
+	logrus.Infof("Applying HelmChart 1 using Job %s/%s", job.Namespace, job.Name)
 	// emit an event to indicate that this Helm chart is being applied
-	c.recorder.Eventf(chart, corev1.EventTypeNormal, "ApplyJob", "Applying HelmChart using Job %s/%s", job.Namespace, job.Name)
+	c.recorder.Eventf(chart, corev1.EventTypeNormal, "ApplyJob", "Applying HelmChart 1 using Job %s/%s", job.Namespace, job.Name)
 
 	return append(objs, job), chartStatus, nil
 }
@@ -229,6 +231,16 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 	expectedJob, objs, err := c.getJobAndRelatedResources(chart)
 	if err != nil {
 		return nil, err
+	}
+
+	logrus.Infof("OnRemove will try remove job %s %s", chart.Namespace, expectedJob.Name)
+
+	// once we have run the above logic, we can now check if the job is complete
+	job1, err := c.jobCache.Get(chart.Namespace, expectedJob.Name)
+	if err == nil {
+		logrus.Infof("Get job 1, the creationTimeStamp is %v", job1.CreationTimestamp)
+	} else {
+		logrus.Infof("Get job 1, no job")
 	}
 
 	// note: on the logic of running an apply here...
@@ -255,9 +267,11 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 	if apierrors.IsNotFound(err) {
 		// the above apply should have created it, something is wrong.
 		// if you are here, there must be a bug in the code.
-		return chart, fmt.Errorf("could not perform uninstall: expected job %s/%s to exist after apply, but not found", chart.Namespace, expectedJob.Name)
+		return chart, fmt.Errorf("could not perform uninstall: expected job %s/%s to exist after apply, but not found, err %w", chart.Namespace, expectedJob.Name, err)
 	} else if err != nil {
 		return chart, err
+	} else {
+		logrus.Infof("Get job 2, the creationTimeStamp is %v", job.CreationTimestamp)
 	}
 
 	// the first time we call this, the job will definitely not be complete... however,
@@ -275,7 +289,7 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 	}
 
 	// uninstall job has successfully finished!
-	c.recorder.Eventf(chart, corev1.EventTypeNormal, "RemoveJob", "Uninstalled HelmChart using Job %s/%s, removing resources", job.Namespace, job.Name)
+	c.recorder.Eventf(chart, corev1.EventTypeNormal, "RemoveJob", "Uninstalled HelmChart 1 using Job %s/%s, removing resources, CreationTimestamp %v", job.Namespace, job.Name, job.CreationTimestamp)
 
 	// note: an empty apply removes all resources owned by this chart
 	err = generic.ConfigureApplyForObject(c.apply, chart, &generic.GeneratingHandlerOptions{
