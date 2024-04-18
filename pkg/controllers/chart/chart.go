@@ -231,6 +231,16 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 		return nil, err
 	}
 
+	fmt.Printf("OnRemove will try remove job %s %s", chart.Namespace, expectedJob.Name)
+
+	// once we have run the above logic, we can now check if the job is complete
+	job1, err := c.jobCache.Get(chart.Namespace, expectedJob.Name)
+	if err == nil {
+		fmt.Printf("Get job 1, the creationTimeStamp is %v", job1.CreationTimestamp)
+	} else {
+		fmt.Printf("Get job 1, no job")
+	}
+
 	// note: on the logic of running an apply here...
 	// if the uninstall job does not exist, it will create it
 	// if the job already exists and it is uninstalling, nothing will change since there's no need to patch
@@ -255,9 +265,11 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 	if apierrors.IsNotFound(err) {
 		// the above apply should have created it, something is wrong.
 		// if you are here, there must be a bug in the code.
-		return chart, fmt.Errorf("could not perform uninstall: expected job %s/%s to exist after apply, but not found", chart.Namespace, expectedJob.Name)
+		return chart, fmt.Errorf("could not perform uninstall: expected job %s/%s to exist after apply, but not found, err %w", chart.Namespace, expectedJob.Name, err)
 	} else if err != nil {
 		return chart, err
+	} else {
+		fmt.Printf("Get job 2, the creationTimeStamp is %v", job.CreationTimestamp)
 	}
 
 	// the first time we call this, the job will definitely not be complete... however,
