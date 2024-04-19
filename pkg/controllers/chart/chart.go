@@ -283,8 +283,25 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 		chartCopy.Status.JobName = job.Name
 		newChart, err := c.helms.Update(chartCopy)
 		if err != nil {
-			return chart, fmt.Errorf("unable to update status of helm chart to add uninstall job name %s", chartCopy.Status.JobName)
+			if apierrors.IsNotFound(err) {
+				logrus.Infof("the chart is gone on apiserver, but the job %s is left, try to clear everything", chartCopy.Status.JobName)
+
+				// note: an empty apply removes all resources owned by this chart
+				err = generic.ConfigureApplyForObject(c.apply, chart, &generic.GeneratingHandlerOptions{
+					AllowClusterScoped: true,
+				}).
+					WithOwner(chart).
+					WithSetID("helm-chart-registration").
+					ApplyObjects()
+				if err != nil {
+					return nil, fmt.Errorf("chart is gone, unable to remove resources tied to HelmChart %s/%s: %s", chart.Namespace, chart.Name, err)
+				}
+				return chart, nil
+			}
+
+			return chart, fmt.Errorf("unable to update status of helm chart to add uninstall job name %s, err %w", chartCopy.Status.JobName, err)
 		}
+
 		return newChart, fmt.Errorf("waiting for delete of helm chart for %s by %s", key, job.Name)
 	}
 
