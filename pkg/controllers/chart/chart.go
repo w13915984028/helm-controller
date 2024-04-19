@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	storage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
@@ -283,9 +284,9 @@ func (c *Controller) OnRemove(key string, chart *v1.HelmChart) (*v1.HelmChart, e
 		chartCopy.Status.JobName = job.Name
 		newChart, err := c.helms.Update(chartCopy)
 		if err != nil {
-			if apierrors.IsNotFound(err) || strings.Contains(err.Error(), "StorageError") {
+			if apierrors.IsNotFound(err) || storage.IsInvalidObj(err) {
+				// if chart is gone, clean resources
 				logrus.Infof("the chart is gone on apiserver, but the job %s is left, try to clear everything", chartCopy.Status.JobName)
-
 				// note: an empty apply removes all resources owned by this chart
 				err = generic.ConfigureApplyForObject(c.apply, chart, &generic.GeneratingHandlerOptions{
 					AllowClusterScoped: true,
